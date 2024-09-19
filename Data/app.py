@@ -32,15 +32,17 @@ def create_directory_structure(base_path, project_name):
 
 # Function to generate the Model class
 def generate_model_class(entity, fields):
-    class_template = f"package model;\n\nimport javax.persistence.Entity;\nimport javax.persistence.Id;\n\n@Entity\npublic class {entity} " + "{{\n"
+    class_template = f"package model;\n\nimport jakarta.persistence.Entity;\nimport jakarta.persistence.Id;\nimport jakarta.persistence.GeneratedValue;\nimport jakarta.persistence.GenerationType;\n\n@Entity\npublic class {entity} " + "{\n"
 
     # Fields
     for field, field_type in fields.items():
+        if field == "id":  # Assuming the field 'id' is the primary key
+            class_template += f"    @Id\n    @GeneratedValue(strategy = GenerationType.IDENTITY)\n"
         class_template += f"    private {field_type} {field};\n"
 
     # Constructor
     constructor_params = ", ".join([f"{field_type} {field}" for field, field_type in fields.items()])
-    class_template += f"\n    public {entity}({constructor_params}) " + "{{\n"
+    class_template += f"\n    public {entity}({constructor_params}) " + "{\n"
     for field in fields:
         class_template += f"        this.{field} = {field};\n"
     class_template += "    }\n"
@@ -62,20 +64,38 @@ def generate_model_class(entity, fields):
 # Function to generate the Repository interface
 def generate_repository_interface(entity):
     return f"package repository;\n\nimport org.springframework.data.jpa.repository.JpaRepository;\n" \
-           f"import model.{entity};\n\npublic interface {entity}Repository extends JpaRepository<{entity}, Long> " + "{{\n}}"
+           f"import model.{entity};\n\npublic interface {entity}Repository extends JpaRepository<{entity}, Long> " + "{\n}"
 
 
 # Function to generate the Service class
-def generate_service_class(entity):
+def generate_service_class(entity, fields):
     service_template = f"package service;\n\nimport model.{entity};\nimport repository.{entity}Repository;\n" \
-                       f"import org.springframework.beans.factory.annotation.Autowired;\nimport org.springframework.stereotype.Service;\n" \
-                       f"import java.util.List;\n\n@Service\npublic class {entity}Service " + "{{\n" \
+                       f"import org.springframework.beans.factory.annotation.Autowired;\nimport org.springframework.http.ResponseEntity;\nimport org.springframework.stereotype.Service;\n" \
+                       f"import java.util.Optional;\nimport java.util.List;\n\n@Service\npublic class {entity}Service " + "{\n" \
                                                                                               f"    @Autowired\n    private {entity}Repository {entity.lower()}Repository;\n\n" \
                                                                                               f"    public List<{entity}> getAll() {{\n        return {entity.lower()}Repository.findAll();\n    }}\n\n" \
                                                                                               f"    public {entity} getById(Long id) {{\n        return {entity.lower()}Repository.findById(id).orElse(null);\n    }}\n\n" \
-                                                                                              f"    public {entity} save({entity} {entity.lower()}) {{\n        return {entity.lower()}Repository.save({entity.lower()});\n    }}\n\n" \
-                                                                                              f"    public void delete(Long id) {{\n        {entity.lower()}Repository.deleteById(id);\n    }}\n}}"
+                                                                                              f"    public ResponseEntity<{entity}> updateById(Long id, {entity} updated{entity}) {{\n" \
+                                                                                              f"        Optional<{entity}> existing{entity} = {entity.lower()}Repository.findById(id);\n" \
+                                                                                              f"        if (existing{entity}.isPresent()) {{\n" \
+                                                                                              f"            {entity} {entity.lower()} = existing{entity}.get();\n"
+
+    # Generate the setter calls for each field dynamically
+    for field in fields:
+        if field.lower() != "id":
+            capitalized_field = field.capitalize()
+            service_template += f"            {entity.lower()}.set{capitalized_field}(updated{entity}.get{capitalized_field}());\n"
+
+    service_template += f"            {entity} saved{entity} = {entity.lower()}Repository.save({entity.lower()});\n" \
+                        f"            return ResponseEntity.ok(saved{entity});\n" \
+                        f"        }} else {{\n" \
+                        f"            return ResponseEntity.notFound().build();\n" \
+                        f"        }}\n" \
+                        f"    }}\n\n" \
+                        f"    public {entity} save({entity} {entity.lower()}) {{\n        return {entity.lower()}Repository.save({entity.lower()});\n    }}\n\n" \
+                        f"    public void delete(Long id) {{\n        {entity.lower()}Repository.deleteById(id);\n    }}\n}}"
     return service_template
+
 
 
 # Function to generate the Controller class
@@ -83,8 +103,8 @@ def generate_controller_class(entity):
     controller_template = f"package controller;\n\nimport model.{entity};\nimport service.{entity}Service;\n" \
                           f"import org.springframework.beans.factory.annotation.Autowired;\n" \
                           f"import org.springframework.web.bind.annotation.*;\n\n" \
-                          f"import java.util.List;\n\n@RestController\n@RequestMapping(\"/{entity.lower()}\")\n" \
-                          f"public class {entity}Controller " + "{{\n\n" \
+                          f"import java.util.*;\n\n@RestController\n@RequestMapping(\"/{entity.lower()}\")\n" \
+                          f"public class {entity}Controller " + "{\n\n" \
                                                                 f"    @Autowired\n    private {entity}Service {entity.lower()}Service;\n\n" \
                                                                 f"    @GetMapping\n    public List<{entity}> getAll() {{\n" \
                                                                 f"        return {entity.lower()}Service.getAll();\n    }}\n\n" \
@@ -92,8 +112,8 @@ def generate_controller_class(entity):
                                                                 f"        return {entity.lower()}Service.getById(id);\n    }}\n\n" \
                                                                 f"    @PostMapping\n    public {entity} create(@RequestBody {entity} {entity.lower()}) {{\n" \
                                                                 f"        return {entity.lower()}Service.save({entity.lower()});\n    }}\n\n" \
-                                                                f"    @PutMapping\n    public {entity} update(@RequestBody {entity} {entity.lower()}) {{\n" \
-                                                                f"        return {entity.lower()}Service.save({entity.lower()});\n    }}\n\n" \
+                                                                f"    @PutMapping(\"/{{id}}\")\n      public ResponseEntity<{entity}> update(@PathVariable Long id,@RequestBody {entity} {entity.lower()}) {{\n" \
+                                                                f"        return {entity.lower()}Service.updateById(id, {entity.lower()});\n    }}\n\n" \
                                                                 f"    @DeleteMapping(\"/{{id}}\")\n    public void delete(@PathVariable Long id) {{\n" \
                                                                 f"        {entity.lower()}Service.delete(id);\n    }}\n}}"
     return controller_template
@@ -122,7 +142,7 @@ def generate_java_classes(json_data):
         print(f"{entity}Repository.java Repository interface created.")
 
     # Generate service
-    service_class = generate_service_class(entity)
+    service_class = generate_service_class(entity,fields)
     with open(os.path.join(project_path, "service", f"{entity}Service.java"), "w") as f:
         f.write(service_class)
         print(f"{entity}Service.java Service class created.")
@@ -141,9 +161,18 @@ def generate_code():
         # Get JSON input from the request
         data = request.get_json()
 
-        if not data or 'entity' not in data or 'fields' not in data or 'project_name' not in data or 'base_path' not in data:
+        # Basic validation for required fields in the request
+        required_fields = ['entity', 'fields', 'project_name', 'base_path']
+        missing_fields = [field for field in required_fields if field not in data]
+        
+        if missing_fields:
             return jsonify(
-                {"error": "Invalid input, please provide 'entity', 'fields', 'project_name', and 'base_path'"}), 400
+                {"error": f"Missing required fields: {', '.join(missing_fields)}"}), 400
+
+        # Check if 'id' is in the 'fields' object
+        if 'id' not in data['fields']:
+            return jsonify(
+                {"error": "'id' is a mandatory field and must be included in 'fields'"}), 400
 
         # Call the function to generate Java classes
         generate_java_classes(data)
@@ -152,6 +181,7 @@ def generate_code():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 # Start Flask app
